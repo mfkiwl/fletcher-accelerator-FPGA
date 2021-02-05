@@ -15,19 +15,15 @@
 #pragma once
 
 #include <string>
-#include <vector>
-#include <memory>
-#include <optional>
 
-#include "fletchgen/mantle.h"
+namespace fletchgen {
 
-namespace fletchgen::top {
+/**
+ * @brief Writes Fletcher's static VHDL files to the given directory.
+ * @param real_dir  The real directory to write to.
+ * @param emb_dir   The embedded filesystem directory to read from, defaulting
+ *                  to the toplevel resource directory ("hardware").
+ */
+void write_static_vhdl(const std::string &real_dir, const std::string &emb_dir = "hardware");
 
-/// @brief Generate an AXI top level on supplied output streams from a ColumnWrapper
-std::string GenerateAXITop(const Mantle &mantle,
-                           const SchemaSet &schema_set,
-                           Axi4LiteSpec axi_spec,
-                           std::optional<std::shared_ptr<Type>> external,
-                           const std::vector<std::ostream *> &outputs);
-
-}  // namespace fletchgen::top
+}  // namespace fletchgen

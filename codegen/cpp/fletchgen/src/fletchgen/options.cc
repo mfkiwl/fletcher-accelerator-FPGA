@@ -68,6 +68,9 @@ bool Options::Parse(Options *options, int argc, char **argv) {
                  "step of the simulation. Init must be a hexadecimal value in the form of 0x01234ABCD.\n"
                  "Example: \"-reg32 c:32:myh2kreg:0xDEADBEEF s:64:mk2hreg\"");
 
+  app.add_option("-e,--external", options->externals_yaml, "Path to YAML file describing external signals to drag "
+                                                           "between kernel and top-level.");
+
   app.add_option("--bus_specs", options->bus_dims,
                  "Specify top-level bus parameters.\n"
                  "Value must be a tuple of the following form: \"aw,dw,lw,bs,bm\"\n"
@@ -89,6 +92,8 @@ bool Options::Parse(Options *options, int argc, char **argv) {
                "Generate simulation top-level template (VHDL only).");
   app.add_flag("--vivado_hls", options->vivado_hls,
                "Generate a Vivado HLS kernel template.");
+
+  app.add_flag("--static-vhdl", options->static_vhdl, "Write static VHDL support files.");
 
   // Other options:
   app.add_flag("-v,--version", options->version,

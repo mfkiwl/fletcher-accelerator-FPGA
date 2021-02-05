@@ -16,6 +16,7 @@
 
 #include <fletcher/fletcher.h>
 #include <cerata/api.h>
+#include <cerata/vhdl/vhdl.h>
 #include <string>
 #include <iomanip>
 #include <cstdlib>
@@ -115,6 +116,9 @@ std::string GenerateSimTop(const Design &design,
   t.Replace("READ_SREC_PATH", read_srec_path);
   t.Replace("WRITE_SREC_PATH", write_srec_path);
 
+  // Mantle declaration
+  t.Replace("MANTLE_DECL", cerata::vhdl::Decl::Generate(*design.mantle_comp, false, 1).ToString());
+
   // Generate all the buffer and recordbatch metadata
   std::stringstream buffer_meta;
   std::stringstream rb_meta;
@@ -148,20 +152,19 @@ std::string GenerateSimTop(const Design &design,
   t.Replace("SREC_BUFFER_ADDRESSES", buffer_meta.str());
   t.Replace("SREC_FIRSTLAST_INDICES", rb_meta.str());
 
+  std::stringstream kri;
   if (!design.kernel_regs.empty()) {
-    std::stringstream kri;
     for (const auto &cr : design.kernel_regs) {
       if (cr.behavior == MmioBehavior::CONTROL) {
         // TODO(johanpel): fix this for non-32 bit regs
         auto val = cr.init ? *cr.init : 0;
         kri << GenMMIOWrite(cr.addr.value() / 4, val, "Write register \"" + cr.name + "\" initial value.");
-        t.Replace("KERNEL_REGS_INIT", kri.str());
       }
     }
-  } else {
-    t.Replace("KERNEL_REGS_INIT", "");
   }
+  t.Replace("KERNEL_REGS_INIT", kri.str());
 
+  // Profiling registers.
   if (!design.profiling_regs.empty()) {
     std::stringstream profile_reads;
     uint32_t addr = 0;
@@ -263,11 +266,15 @@ std::string GenerateSimTop(const Design &design,
                     "    wreq_ready                  => bus_wreq_ready,\n"
                     "    wreq_addr                   => bus_wreq_addr,\n"
                     "    wreq_len                    => bus_wreq_len,\n"
+                    "    wreq_last                   => bus_wreq_last,\n"
                     "    wdat_valid                  => bus_wdat_valid,\n"
                     "    wdat_ready                  => bus_wdat_ready,\n"
                     "    wdat_data                   => bus_wdat_data,\n"
                     "    wdat_strobe                 => bus_wdat_strobe,\n"
-                    "    wdat_last                   => bus_wdat_last\n"
+                    "    wdat_last                   => bus_wdat_last,\n"
+                    "    wrep_valid                  => bus_wrep_valid,\n"
+                    "    wrep_ready                  => bus_wrep_ready,\n"
+                    "    wrep_ok                     => bus_wrep_ok\n"
                     "  );");
 
     t.Replace("MST_WREQ_DECLARE",
@@ -275,29 +282,54 @@ std::string GenerateSimTop(const Design &design,
               "      wr_mst_wreq_ready         : in std_logic;\n"
               "      wr_mst_wreq_addr          : out std_logic_vector(BUS_ADDR_WIDTH-1 downto 0);\n"
               "      wr_mst_wreq_len           : out std_logic_vector(BUS_LEN_WIDTH-1 downto 0);\n"
+              "      wr_mst_wreq_last          : out std_logic;\n"
               "      wr_mst_wdat_valid         : out std_logic;\n"
               "      wr_mst_wdat_ready         : in std_logic;\n"
               "      wr_mst_wdat_data          : out std_logic_vector(BUS_DATA_WIDTH-1 downto 0);\n"
               "      wr_mst_wdat_strobe        : out std_logic_vector(BUS_DATA_WIDTH/8-1 downto 0);\n"
-              "      wr_mst_wdat_last          : out std_logic;");
+              "      wr_mst_wdat_last          : out std_logic;"
+              "      wr_mst_wrep_valid         : in  std_logic;\n"
+              "      wr_mst_wrep_ready         : out std_logic;\n"
+              "      wr_mst_wrep_ok            : in  std_logic;\n");
 
     t.Replace("MST_WREQ_INSTANTIATE",
               "      wr_mst_wreq_valid         => bus_wreq_valid,\n"
               "      wr_mst_wreq_ready         => bus_wreq_ready,\n"
               "      wr_mst_wreq_addr          => bus_wreq_addr,\n"
               "      wr_mst_wreq_len           => bus_wreq_len,\n"
+              "      wr_mst_wreq_last          => bus_wreq_last,\n"
               "      wr_mst_wdat_valid         => bus_wdat_valid,\n"
               "      wr_mst_wdat_ready         => bus_wdat_ready,\n"
               "      wr_mst_wdat_data          => bus_wdat_data,\n"
               "      wr_mst_wdat_strobe        => bus_wdat_strobe,\n"
-              "      wr_mst_wdat_last          => bus_wdat_last,");
+              "      wr_mst_wdat_last          => bus_wdat_last,\n"
+              "      wr_mst_wrep_valid         => bus_wrep_valid,\n"
+              "      wr_mst_wrep_ready         => bus_wrep_ready,\n"
+              "      wr_mst_wrep_ok            => bus_wrep_ok,");
   } else {
     t.Replace("BUS_WRITE_SLAVE_MOCK", "");
     t.Replace("MST_WREQ_DECLARE", "");
     t.Replace("MST_WREQ_INSTANTIATE", "");
   }
 
-  // Profiling registers.
+  if (design.external) {
+    auto ext = design.external.value();
+    auto p_mantle = cerata::port("ext", ext, cerata::Port::Dir::IN);
+    auto s_top = cerata::signal("ext", ext);
+    cerata::Connect(p_mantle, s_top);
+
+    auto inst_block = cerata::vhdl::Inst::GeneratePortMaps(*p_mantle);
+    inst_block.indent = 3;
+    inst_block << ",";
+
+    auto decl_block = cerata::vhdl::Decl::Generate(*s_top, 1);
+
+    t.Replace("EXTERNAL_SIG_DECL", decl_block.ToString());
+    t.Replace("EXTERNAL_INST_MAP", inst_block.ToString());
+  } else {
+    t.Replace("EXTERNAL_SIG_DECL", "");
+    t.Replace("EXTERNAL_INST_MAP", "");
+  }
 
   for (auto &o : outputs) {
     o->flush();

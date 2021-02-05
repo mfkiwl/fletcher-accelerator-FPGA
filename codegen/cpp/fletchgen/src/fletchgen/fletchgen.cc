@@ -15,6 +15,8 @@
 #include "fletchgen/fletchgen.h"
 
 #include <cerata/api.h>
+#include <cerata/dot/dot.h>
+#include <cerata/vhdl/vhdl.h>
 #include <fletcher/common.h>
 
 #include <fstream>
@@ -26,10 +28,12 @@
 #include "fletchgen/srec/recordbatch.h"
 #include "fletchgen/top/sim.h"
 #include "fletchgen/top/axi.h"
+#include "fletchgen/static_vhdl.h"
 
 namespace fletchgen {
 
 int fletchgen(int argc, char **argv) {
+
   // Start logging
   std::string program_name = fletchgen::GetProgramName(argv[0]);
   fletcher::StartLogging(program_name, FLETCHER_LOG_DEBUG, program_name + ".log");
@@ -139,7 +143,11 @@ int fletchgen(int argc, char **argv) {
     std::string axi_file_path = options->output_dir + "/vhdl/AxiTop.gen.vhd";
     FLETCHER_LOG(INFO, "Saving AXI top-level design to: " + axi_file_path);
     axi_file = std::ofstream(axi_file_path);
-    fletchgen::top::GenerateAXITop(*design.mantle_comp, *design.schema_set, {&axi_file}, design.mmio_spec);
+    fletchgen::top::GenerateAXITop(*design.mantle_comp,
+                                   *design.schema_set,
+                                   design.mmio_spec,
+                                   design.external,
+                                   {&axi_file});
     axi_file.close();
   }
 
@@ -153,6 +161,11 @@ int fletchgen(int argc, char **argv) {
     auto hls_template_file = std::ofstream(hls_template_path);
     hls_template_file << fletchgen::hls::GenerateVivadoHLSTemplate(*design.kernel);
     */
+  }
+
+  // Write static VHDL support files for Fletcher.
+  if (options->static_vhdl) {
+    write_static_vhdl("vhdl/support");
   }
 
   // Wait for vhdmmio.
